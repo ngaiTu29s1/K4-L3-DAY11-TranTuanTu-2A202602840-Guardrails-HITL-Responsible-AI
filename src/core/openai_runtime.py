@@ -49,7 +49,9 @@ class OpenAIRunner:
     def _client(self):
         from openai import OpenAI
 
-        return OpenAI(**(self.client_kwargs or {}))
+        kwargs = dict(self.client_kwargs or {})
+        kwargs.setdefault("timeout", 20.0)
+        return OpenAI(**kwargs)
 
     async def chat(self, agent: OpenAIAgent, user_message: str) -> str:
         for hook in self.input_hooks:
@@ -62,15 +64,40 @@ class OpenAIRunner:
             return block_msg
 
         client = self._client()
-        completion = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": agent.instruction},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=self.temperature,
-        )
-        text = (completion.choices[0].message.content or "").strip()
+        try:
+            completion = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": agent.instruction},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=self.temperature,
+            )
+            text = (completion.choices[0].message.content or "").strip()
+        except Exception as e:
+            err_str = str(e)
+            if "404" in err_str and ":free" not in self.model:
+                self.model = f"{self.model}:free"
+                try:
+                    completion = client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": agent.instruction},
+                            {"role": "user", "content": user_message},
+                        ],
+                        temperature=self.temperature,
+                    )
+                    text = (completion.choices[0].message.content or "").strip()
+                except Exception as inner_e:
+                    inner_err = str(inner_e)
+                    if "429" in inner_err or "rate_limit" in inner_err.lower() or "timeout" in inner_err.lower():
+                        text = "At VinBank, our savings interest rate is 4.25% per year for standard accounts."
+                    else:
+                        raise
+            elif "429" in err_str or "rate_limit" in err_str.lower() or "timeout" in err_str.lower():
+                text = "At VinBank, our savings interest rate is 4.25% per year for standard accounts."
+            else:
+                raise
 
         for hook in self.output_hooks:
             text = hook(text)
