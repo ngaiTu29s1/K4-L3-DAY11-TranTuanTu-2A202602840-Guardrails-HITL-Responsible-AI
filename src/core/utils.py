@@ -44,13 +44,25 @@ async def chat_with_agent(agent, runner, user_message: str, session_id=None):
         parts=[types.Part.from_text(text=user_message)],
     )
 
-    final_response = ""
-    async for event in runner.run_async(
-        user_id=user_id, session_id=session.id, new_message=content
-    ):
-        if hasattr(event, "content") and event.content and event.content.parts:
-            for part in event.content.parts:
-                if hasattr(part, "text") and part.text:
-                    final_response += part.text
+    import asyncio
+
+    for attempt in range(4):
+        try:
+            final_response = ""
+            async for event in runner.run_async(
+                user_id=user_id, session_id=session.id, new_message=content
+            ):
+                if hasattr(event, "content") and event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            final_response += part.text
+            return final_response, session
+        except Exception as e:
+            err = str(e).lower()
+            if ("429" in err or "resource_exhausted" in err or "quota" in err) and attempt < 3:
+                wait_sec = 2 * (attempt + 1)
+                await asyncio.sleep(wait_sec)
+                continue
+            raise
 
     return final_response, session

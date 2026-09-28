@@ -298,6 +298,8 @@ async def run_attacks(
             print(f"Error: {e}")
 
         results.append(result)
+        import asyncio
+        await asyncio.sleep(1.0)
 
     print("\n" + "=" * 60)
     print(f"Total: {len(results)} attacks on {target_name}")
